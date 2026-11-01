@@ -8621,6 +8621,7 @@
         "web-platform-tests/css/css-text-decor/reference/text-decoration-line-recalc-ref.html",
         "web-platform-tests/css/css-text-decor/reference/text-decoration-line-ref.html",
         "web-platform-tests/css/css-text-decor/reference/text-decoration-lines-001-ref.html",
+        "web-platform-tests/css/css-text-decor/reference/text-decoration-propagated-ink-overflow-ref.html",
         "web-platform-tests/css/css-text-decor/reference/text-decoration-propagation-01-ref.html",
         "web-platform-tests/css/css-text-decor/reference/text-decoration-propagation-02-ref.html",
         "web-platform-tests/css/css-text-decor/reference/text-decoration-propagation-03-ref.html",
