@@ -1545,32 +1545,43 @@ JSArray* LiteralParser<CharType, reviverMode>::materializeArray(VM& vm, unsigned
         break;
     }
 
-    {
-        ObjectInitializationScope initializationScope(vm);
-        Structure* structure = m_globalObject->arrayStructureForIndexingTypeDuringAllocation(indexingType);
-        if (JSArray* array = JSArray::tryCreateUninitializedRestricted(initializationScope, structure, length)) [[likely]] {
-            // The structure can have a different shape than requested, for example when double arrays are disabled.
-            IndexingType shape = array->indexingType() & IndexingShapeMask;
-            if (shape == DoubleShape) {
+    Structure* structure = m_globalObject->arrayStructureForIndexingTypeDuringAllocation(indexingType);
+    IndexingType actualIndexingType = structure->indexingType();
+    if (!hasAnyArrayStorage(actualIndexingType) && length <= MAX_STORAGE_VECTOR_LENGTH) [[likely]] {
+        ASSERT(!structure->outOfLineCapacity());
+        unsigned vectorLength = Butterfly::optimalContiguousVectorLength(static_cast<size_t>(0), length);
+        void* memory = vm.auxiliarySpace().allocate(
+            vm,
+            Butterfly::totalSize(0, 0, true, vectorLength * sizeof(EncodedJSValue)),
+            nullptr, AllocationFailureMode::ReturnNull);
+        if (memory) [[likely]] {
+            Butterfly* butterfly = Butterfly::fromBase(memory, 0, 0);
+            butterfly->setVectorLength(vectorLength);
+            butterfly->setPublicLength(length);
+            if (hasDouble(actualIndexingType)) {
                 // JSON has no NaN, so every element can be stored as a double.
-                double* data = array->butterfly()->contiguousDouble().data();
+                double* data = butterfly->contiguousDouble().data();
                 for (unsigned i = 0; i < length; ++i)
                     data[i] = values[i].asNumber();
-            } else if (shape == Int32Shape)
-                memcpy(std::bit_cast<JSValue*>(array->butterfly()->contiguous().data()), values, length * sizeof(JSValue));
-            else if (shape == ContiguousShape) {
-                gcSafeMemcpy(std::bit_cast<JSValue*>(array->butterfly()->contiguous().data()), values, length * sizeof(JSValue));
-                vm.writeBarrier(array);
             } else {
-                for (unsigned i = 0; i < length; ++i)
-                    array->initializeIndex(initializationScope, i, values[i]);
+                JSValue* dst = std::bit_cast<JSValue*>(butterfly->contiguous().data());
+                if (length == 1)
+                    dst[0] = values[0];
+                else if (length <= 4) {
+                    dst[0] = values[0];
+                    dst[1] = values[1];
+                    dst[length - 2] = values[length - 2];
+                    dst[length - 1] = values[length - 1];
+                } else
+                    memcpySpan(unsafeMakeSpan(dst, length), unsafeMakeSpan(values, length));
             }
-            return array;
+            Butterfly::clearRange(actualIndexingType, butterfly, length, vectorLength);
+            return JSArray::createWithButterfly(vm, nullptr, structure, butterfly);
         }
     }
 
-    // Lengths beyond what a contiguous vector can hold, and allocation failures, grow an empty array
-    // instead so that they report out of memory rather than crashing.
+    // Array storage shapes take the general path, and so do lengths beyond what a contiguous vector
+    // can hold and allocation failures, which have to report out of memory rather than crash.
     JSArray* array = constructEmptyArray(m_globalObject, nullptr);
     RETURN_IF_EXCEPTION(scope, nullptr);
     for (unsigned i = 0; i < length; ++i) {

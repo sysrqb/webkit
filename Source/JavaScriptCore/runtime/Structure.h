@@ -513,7 +513,7 @@ public:
         // changed between the new and old structure. So, it's important to keep this simple because
         // it's on a fast path.
         
-        if (!outOfLineSize)
+        if (!outOfLineSize) [[likely]]
             return 0;
 
         if (outOfLineSize <= initialOutOfLineCapacity)
